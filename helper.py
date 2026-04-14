@@ -66,7 +66,7 @@ def build_file_list(path, start="2019010100", end="2024123123"):
     
     while current <= end_dt:
         filename = f"X_{current.strftime('%Y%m%d%H')}.pt"
-        filename = path
+        filename = path + filename
         filenames.append(filename)
         current += timedelta(hours=1)
     
