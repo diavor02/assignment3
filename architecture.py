@@ -1,23 +1,16 @@
 import torch
 import torch.nn as nn
+import os
+
+PATH = "/cluster/tufts/c26sp1cs0137/data/assignment3_data/"
+
+# Input shape: (B, 7, 450, 449)
+# Intended Output shape: (B, d_model=64, ~110, ~110)
+
 
 import torch
 import torch.nn as nn
 
-# Input shape: (B, 7, 450, 449)
-# Output shape: (B, d_model=128, ~110, ~110)
-class WeatherCNN(nn.Module):
-    def __init__(self, in_channels=7, d_model=64):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(32, d_model, kernel_size=3, padding=1, stride=2),
-            nn.ReLU(),
-        )
-
-    def forward(self, x):
-        return self.net(x)
 
 class TabularEmbedding(nn.Module):
     def __init__(self, demand_dim, cal_dim, d_model):

@@ -4,6 +4,52 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+import torch
+import torch.nn as nn
+
+class SpatialTokenExtractor(nn.Module):
+    def __init__(self, cnn_net, d_model=64, S=48, horizon=24, downsampled_h=32, downsampled_w=32):
+        super().__init__()
+        self.cnn = cnn_net
+        self.d_model = d_model
+        
+        # P = Number of Spatial Patches (Tokens) per timestep
+        self.P = downsampled_h * downsampled_w
+        self.T = S + horizon  # Total sequence length
+
+        # Embeddings (Learnable Parameters) as shown in the diagram
+        self.spatial_embed = nn.Parameter(torch.randn(1, 1, self.P, d_model))
+        self.timestep_embed = nn.Parameter(torch.randn(1, self.T, 1, d_model))
+
+    def forward(self, x):
+        """
+        Expects input shape from DataLoader: (B, T, H, W, C)
+        Returns unified sequence for Transformer: (B, T * P, d_model)
+        """
+        B, T, H, W, C = x.shape
+
+        # 1. CNN Downsample
+        # Permute to (B, T, C, H, W) and fold T into B for Conv2D
+        x = x.permute(0, 1, 4, 2, 3).contiguous()
+        x = x.view(B * T, C, H, W)
+        
+        # Shape becomes (B*T, d_model, downsampled_h, downsampled_w)
+        tokens = self.cnn(x) 
+
+        # 2. Extract Spatial Tokens
+        # Flatten spatial dimensions H and W into P patches
+        tokens = tokens.view(B, T, self.d_model, self.P) # (B, T, d_model, P)
+        tokens = tokens.permute(0, 1, 3, 2)              # (B, T, P, d_model)
+
+        # 3. Inject Positional Encodings
+        # Broadcasting naturally handles the (1, 1, P, d) and (1, T, 1, d) additions
+        tokens = tokens + self.spatial_embed + self.timestep_embed
+
+        # 4. Create Unified Sequence
+        # Flatten Time (T) and Patches (P) into a single sequence length
+        unified_seq = tokens.view(B, T * self.P, self.d_model) 
+
+        return unified_seq
 
 def build_tokens(
     weather: Tensor,

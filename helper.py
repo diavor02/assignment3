@@ -4,6 +4,9 @@ import torch
 
 from datetime import datetime, timedelta
 
+PATH = "/cluster/tufts/c26sp1cs0137/data/assignment3_data/"
+
+
 def add_calendar_features(df):
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"])
 
@@ -46,7 +49,7 @@ def extract_year(s: str) -> str:
     return s[2:6]
 
 
-def generate_filenames(start="2019010100", end="2024123123"):
+def build_file_list(path, start="2019010100", end="2024123123"):
     """
     Generate filenames from X_2019010100.pt to X_2024123123.pt
     Format: X_YYYYMMDDХH.pt (year, month, day, hour)
@@ -54,47 +57,20 @@ def generate_filenames(start="2019010100", end="2024123123"):
     # Parse start and end
     start_dt = datetime.strptime(start, "%Y%m%d%H")
     end_dt = datetime.strptime(end, "%Y%m%d%H")
+
+    path += "2019/"
+    assert path == PATH + "weather_data/2019/"
     
     filenames = []
     current = start_dt
     
     while current <= end_dt:
         filename = f"X_{current.strftime('%Y%m%d%H')}.pt"
+        filename = path
         filenames.append(filename)
         current += timedelta(hours=1)
     
     return filenames
-
-def load_files_to_dataframe(data_dir, start="2019010100", end="2024123123"):
-    """
-    Load all .pt files into a single DataFrame using torch.load.
-    Assumes each .pt file contains a tensor or dict of tensors.
-    """
-    filenames = generate_filenames(start, end)
-    
-    records = []
-    for fname in filenames:
-        year = extract_year(fname)
-        filepath = f"{data_dir}/{year}/{fname}"
-        try:
-            data = torch.load(filepath, weights_only=True)
-            
-            # If the file contains a tensor, convert to a flat record
-            if isinstance(data, torch.Tensor):
-                records.append({"filename": fname, "data": data.numpy()})
-            
-            # If the file contains a dict of tensors, flatten into columns
-            elif isinstance(data, dict):
-                row = {"filename": fname}
-                row.update({k: v.numpy() if isinstance(v, torch.Tensor) else v 
-                             for k, v in data.items()})
-                records.append(row)
-                
-        except FileNotFoundError:
-            print(f"Warning: {filepath} not found, skipping...")
-    
-    return pd.DataFrame(records)
-
 
 def assert_no_empty_values(df: pd.DataFrame) -> None:
     """
