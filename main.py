@@ -1,9 +1,14 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
+
+from datasets import TabularLazyDataset, WeatherLazyDataset
+from helper import mape_loss
 
 # ==========================================
 # 1. SPATIAL COMPONENTS
 # ==========================================
+
 
 class WeatherCNN(nn.Module):
     """
@@ -12,25 +17,22 @@ class WeatherCNN(nn.Module):
     - aggressively downsamples
     - finishes with a fixed spatial grid via AdaptiveAvgPool2d
     """
+
     def __init__(self, in_channels=7, d_model=64, final_grid=4):
         super().__init__()
         self.features = nn.Sequential(
             # 450x449 -> ~225x225
             nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-
             # ~225x225 -> ~113x113
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-
             # ~113x113 -> ~57x57
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-
             # ~57x57 -> ~29x29
             nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-
             # ~29x29 -> ~15x15
             nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
@@ -81,8 +83,14 @@ class SpatialTokenExtractor(nn.Module):
         return tokens
 
 
-def create_spatial_tokens(cnn, original_input_channels_size=7, original_h=450, original_w=449):
-    dummy_input = torch.zeros(1, original_input_channels_size, original_h, original_w)
+def create_spatial_tokens(
+    cnn, original_input_channels_size=7, original_h=450, original_w=449
+):
+    device = next(cnn.parameters()).device  # ✅ get model device
+
+    dummy_input = torch.zeros(
+        1, original_input_channels_size, original_h, original_w, device=device  # ✅ FIX
+    )
     dummy_output = cnn(dummy_input)
     _, _, downsampled_h_size, downsampled_w_size = dummy_output.shape
 
@@ -92,11 +100,7 @@ def create_spatial_tokens(cnn, original_input_channels_size=7, original_h=450, o
     print("P:", P)
 
     token_extractor = SpatialTokenExtractor(
-        cnn_net=cnn,
-        d_model=64,
-        S=48,
-        horizon=24,
-        final_grid=downsampled_h_size
+        cnn_net=cnn, d_model=64, S=48, horizon=24, final_grid=downsampled_h_size
     )
     return token_extractor, P, downsampled_h_size, downsampled_w_size
 
@@ -104,6 +108,7 @@ def create_spatial_tokens(cnn, original_input_channels_size=7, original_h=450, o
 # ==========================================
 # 2. TABULAR / COMBINER COMPONENT
 # ==========================================
+
 
 class HybridTokenCombiner(nn.Module):
     def __init__(self, y_dim=8, c_dim=6, embed_dim=64):
@@ -122,7 +127,7 @@ class HybridTokenCombiner(nn.Module):
         downsampled_w_size,
         d_model=64,
         S=48,
-        fut=24
+        fut=24,
     ):
         B = y_hist.shape[0]
         device = y_hist.device
@@ -171,52 +176,95 @@ if __name__ == "__main__":
     original_h = 450
     original_w = 449
     in_channels = 7
-    final_grid = 4   # 4x4 => P = 16, much smaller sequence
+    final_grid = 4  # 4x4 => P = 16, much smaller sequence
+
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", DEVICE)
 
     # --- Initialize Models ---
     print("Initialize models")
-    cnn_module = WeatherCNN(in_channels=in_channels, d_model=d_model, final_grid=final_grid)
+    cnn_module = WeatherCNN(
+        in_channels=in_channels, d_model=d_model, final_grid=final_grid
+    ).to(DEVICE)
     token_extractor_module, P, d_h, d_w = create_spatial_tokens(
         cnn_module,
         original_input_channels_size=in_channels,
         original_h=original_h,
-        original_w=original_w
+        original_w=original_w,
     )
-    combiner_module = HybridTokenCombiner()
+    combiner_module = HybridTokenCombiner().to(DEVICE)
+    token_extractor_module.to(DEVICE)
 
     transformer_layer = nn.TransformerEncoderLayer(
-        d_model=d_model,
-        nhead=8,
-        batch_first=True
+        d_model=d_model, nhead=8, batch_first=True
+    ).to(DEVICE)
+
+    # --- Tabular Data Setup ---
+    tabular_dataset = TabularLazyDataset()
+
+    tabular_loader = DataLoader(
+        tabular_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=1,  # increase if cluster allows
+        pin_memory=True,  # important for CUDA
     )
 
-    # --- Dummy Tabular Data Setup ---
-    c_future_test = torch.zeros(43753, 24, 6)
-    c_hist_test = torch.zeros(43753, 48, 6)
-    y_hist_test = torch.zeros(43753, 48, 8)
+    # #  --- Weather Tabular Setup ---
+    # weather_dataset = WeatherLazyDataset("/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data")
 
-    # --- Mock Dataloader Setup ---
+    # weather_loader = DataLoader(
+    #     weather_dataset,
+    #     batch_size=BATCH_SIZE,
+    #     shuffle=False,
+    #     num_workers=1,      # increase if cluster allows
+    #     pin_memory=True     # important for CUDA
+    # )
+
     print("Mock data layer")
     mock_dataloader = [
         torch.randn(BATCH_SIZE, S + fut, original_h, original_w, in_channels)
         for _ in range(2)
     ]
-    print("Finish mocking")
+
+    print("Initialize optimizer")
+    prediction_head = nn.Linear(d_model, 8).to(DEVICE)
+
+    optimizer = torch.optim.Adam(
+        list(cnn_module.parameters()) +
+        list(token_extractor_module.parameters()) +
+        list(combiner_module.parameters()) +
+        list(transformer_layer.parameters()) +
+        list(prediction_head.parameters()),
+        lr=1e-4
+    )
 
     # --- Training Loop ---
-    for batch_idx, batch in enumerate(mock_dataloader):
-        B = batch.shape[0]
-        print(f"\n--- Processing Batch {batch_idx + 1} (Size: {B}) ---")
+    for batch_idx, (weather_batch, tabular_batch) in enumerate(
+        zip(mock_dataloader, tabular_loader)
+    ):
+        print(f"\n--- Processing Batch {batch_idx + 1} ---")
 
-        spatial_tokens = token_extractor_module(batch)
-        print(f"Spatial Tokens Shape: {spatial_tokens.shape}")
+        # Move weather data
+        weather_batch = weather_batch.to(DEVICE)
 
-        start_idx = batch_idx * BATCH_SIZE
-        end_idx = start_idx + B
-        y_hist = y_hist_test[start_idx:end_idx]
-        c_hist = c_hist_test[start_idx:end_idx]
-        c_future = c_future_test[start_idx:end_idx]
+        # Unpack + move tabular data
+        y_hist, y_future, c_hist, c_future = tabular_batch
+        y_hist = y_hist.to(DEVICE, non_blocking=True)
+        y_future = y_future.to(DEVICE, non_blocking=True)
+        c_hist = c_hist.to(DEVICE, non_blocking=True)
+        c_future = c_future.to(DEVICE, non_blocking=True)
 
+        # 1. Spatial tokens
+        spatial_tokens = token_extractor_module(weather_batch)
+
+        print("y_hist shape:", y_hist.shape)
+        print("y_future shape:", y_future.shape)
+        print("c_hist shape:", c_hist.shape)
+        print("c_future shape:", c_future.shape)
+        print("spatial_tokens shape:", spatial_tokens.shape)
+
+        # 2. Combine
         final_sequence = combiner_module(
             y_hist=y_hist,
             c_hist=c_hist,
@@ -226,12 +274,34 @@ if __name__ == "__main__":
             downsampled_w_size=d_w,
             d_model=d_model,
             S=S,
-            fut=fut
+            fut=fut,
         )
 
-        print(f"Final Sequence Shape: {final_sequence.shape}")
+        print("final_sequence shape:", final_sequence.shape)
 
+        # 3. Transformer
         transformer_out = transformer_layer(final_sequence)
-        print(f"Transformer Output Shape: {transformer_out.shape}")
-        print("Successful Forward Pass! ✅")
-        break
+
+        print(f"Success for batch idx {batch_idx}")
+
+        # reshape back
+        B = weather_batch.shape[0]
+        transformer_out = transformer_out.view(B, S + fut, (d_h * d_w + 1), d_model)
+
+        # extract tabular tokens
+        tabular_tokens = transformer_out[:, :, -1, :]
+
+        # future only
+        future_tokens = tabular_tokens[:, S:, :]
+
+        # prediction
+        y_pred = prediction_head(future_tokens)
+
+        # loss
+        loss = mape_loss(y_pred, y_future)
+
+        print("Loss:", loss.item())
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()

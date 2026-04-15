@@ -104,3 +104,6 @@ def assert_no_empty_values(df: pd.DataFrame) -> None:
         for col, problems in issues.items():
             report_lines.append(f"  Column '{col}': {', '.join(problems)}")
         raise AssertionError("\n".join(report_lines))
+
+def mape_loss(y_pred, y_true, eps=1e-5):
+    return torch.mean(torch.abs((y_true - y_pred) / (y_true + eps)))
