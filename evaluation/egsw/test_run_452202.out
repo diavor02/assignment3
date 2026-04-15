@@ -1,0 +1,34 @@
+Running ... egsw for 2 days
+Evaluating model: egsw  |  test year: 2022  |  n_eval_days: 2
+Loading energy demand data …
+  Contiguity check : PASSED
+  Zones (8)    : ['ME', 'NH', 'VT', 'CT', 'RI', 'SEMA', 'WCMA', 'NEMA_BOST']
+  Time range        : 2019-01-01 00:00:00  →  2023-12-31 23:00:00
+  Total hours       : 43824
+
+Test configuration
+  Model    : egsw
+  Test year: 2022
+  # dates  : 2
+  Dates    : 2022-12-30  →  2022-12-31
+
+Loaded model : egsw  (EvaluationWrapper)
+
+Running inference …
+  [  1/2]  2022-12-30
+  [  2/2]  2022-12-31
+
+=================================================================
+Results  —  model: egsw   test year: 2022
+=================================================================
+  ME                    MAPE:    2.42 %
+  NH                    MAPE:    1.31 %
+  VT                    MAPE:    2.83 %
+  CT                    MAPE:    2.43 %
+  RI                    MAPE:    2.10 %
+  SEMA                  MAPE:    2.55 %
+  WCMA                  MAPE:    1.35 %
+  NEMA_BOST             MAPE:    1.52 %
+
+  Overall               MAPE:    2.06 %
+=================================================================

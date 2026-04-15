@@ -1,0 +1,50 @@
+{
+    "data": {
+        "data_root":       "/cluster/tufts/c26sp1cs0137/data/assignment3_data",
+        "cache_dir":       "/cluster/tufts/c26sp1cs0137/swebbe01/CS137_DNN_Final_Project/caches",
+        "norm_stats_file":          "energy/2019_2021_energy_norm_stats.json",
+        "weather_data_cache_crop":  "tight",
+        "train_years":              [2019, 2020, 2021],
+        "val_years":                [2022],
+        "batch_size":      4,
+        "num_workers":     4,
+        "prefetch_factor": 2
+    },
+    "model": {
+        "d_model":         128,
+        "nhead":           4,
+        "num_layers":      2,
+        "dim_feedforward": 512,
+        "dropout":         0.1,
+        "S":               24,
+        "spatial_cnn_args": {
+            "block_config":       [[32, 2], [64, 2], [128, 2]],
+            "grid_h":             10,
+            "grid_w":             10,
+            "crop_cache_path":    "/cluster/tufts/c26sp1cs0137/swebbe01/CS137_DNN_Final_Project/caches/crop/precropped_tight.json",
+            "weather_stats_path": "/cluster/tufts/c26sp1cs0137/swebbe01/CS137_DNN_Final_Project/caches/weather/2019_2021_weather_norm_stats_tight.json"
+        },
+        "tabular_encoder_args": {
+            "norm_stats_path": "/cluster/tufts/c26sp1cs0137/swebbe01/CS137_DNN_Final_Project/caches/energy/2019_2021_energy_norm_stats.json",
+            "n_zones":         8,
+            "cal_dim":         11
+        },
+        "mlp_args": {
+            "n_zones":     8,
+            "mlp_type":    "tabular",
+            "hidden_dims": [256, 128]
+        }
+    },
+    "training": {
+        "real_crop_path":  "/cluster/tufts/c26sp1cs0137/swebbe01/CS137_DNN_Final_Project/caches/crop/tight_crop.json",
+        "epochs":         100,
+        "learning_rate":  1e-4,
+        "weight_decay":   1e-2,
+        "patience":       10,
+        "lr_factor":      0.5,
+        "lr_patience":    5,
+        "lr_min":         1e-6,
+        "grad_clip_norm": 5.0,
+        "use_amp":        true
+    }
+}
