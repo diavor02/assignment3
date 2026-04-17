@@ -1,166 +1,157 @@
-#!/usr/bin/env python3
-"""
-Training script for the Baseline CNN-Transformer day-ahead energy forecasting model.
-
-This script demonstrates the optimization loop:
-1. Loads data via a PyTorch DataLoader.
-2. Performs forward passes to get predictions.
-3. Calculates the loss (error) against true targets.
-4. Uses backpropagation to update model weights.
-5. Saves the best model checkpoint for evaluation.
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
+import time
 
-# Import the model from your existing file
-from model import EnergyForecastModel, _CKPT_PATH
+from model import EnergyForecastModel, SpatialCNN, get_model
 
-# =============================================================================
-# 1. Dataset Placeholder
-# =============================================================================
-class EnergyWeatherDataset(Dataset):
+# NOTE: Assuming your model classes (SpatialCNN, EnergyForecastModel) 
+# and the get_model factory are imported here. For example:
+# from your_model_file import EnergyForecastModel, SpatialCNN, get_model
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CKPT_PATH = Path("energy_forecast_model.pt")
+
+# Hyperparameters
+BATCH_SIZE = 2      # Kept small due to large 450x449 weather inputs
+EPOCHS = 5
+LEARNING_RATE = 1e-4
+N_ZONES = 10
+N_WEATHER_VARS = 7
+FUTURE_LEN = 24
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Dummy Data Generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_dummy_batch(batch_size: int, n_zones: int, device: torch.device):
     """
-    A placeholder PyTorch Dataset. 
-    In your real code, this would handle the sliding window logic over your 
-    target_energy_zonal_*.csv and X_*.pt weather tensors.
+    Generates dummy tensors matching the expected inputs for adapt_inputs().
     """
-    def __init__(self, is_train=True):
-        self.is_train = is_train
-        self.n_samples = 1000 if is_train else 200 # Dummy lengths
-        
-        # Ensure dimensions match what the model expects:
-        self.history_len = 168
-        self.future_len = 24
-        self.n_zones = 8      # Assuming 10 energy zones for this example
-        self.weather_shape = (450, 449, 7)
-
-    def __len__(self):
-        return self.n_samples
-
-    def __getitem__(self, idx):
-        # ---------------------------------------------------------------------
-        # REPLACE THIS BLOCK with your actual data loading logic.
-        # This just generates random tensors of the correct shape.
-        # ---------------------------------------------------------------------
-        hist_weather = torch.randn(self.history_len, *self.weather_shape)
-        hist_energy  = torch.randn(self.history_len, self.n_zones)
-        fut_weather  = torch.randn(self.future_len, *self.weather_shape)
-        
-        # future_time: int64 hours since Unix epoch (dummy sequential hours)
-        base_hour = 400000 + idx
-        fut_time = torch.arange(base_hour, base_hour + self.future_len, dtype=torch.int64)
-        
-        # The actual ground truth we want the model to predict
-        target_energy = torch.randn(self.future_len, self.n_zones) 
-
-        return hist_weather, hist_energy, fut_weather, fut_time, target_energy
-
-# =============================================================================
-# 2. Main Training Function
-# =============================================================================
-def train_model():
-    # --- Configuration ---
-    num_epochs = 20
-    batch_size = 8
-    learning_rate = 1e-4
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Training on device: {device}")
-
-    # --- Data Loaders ---
-    train_dataset = EnergyWeatherDataset(is_train=True)
-    val_dataset   = EnergyWeatherDataset(is_train=False)
+    # historical window = 168 hours (1 week)
+    history_weather = torch.randn(batch_size, 168, 450, 449, N_WEATHER_VARS, device=device)
+    # Energy in raw MWh (e.g., ranging from 50 to 500)
+    history_energy = torch.rand(batch_size, 168, n_zones, device=device) * 450 + 50 
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    # future window = 24 hours
+    future_weather = torch.randn(batch_size, FUTURE_LEN, 450, 449, N_WEATHER_VARS, device=device)
+    
+    # Target values we are trying to predict (raw MWh)
+    future_energy_target = torch.rand(batch_size, FUTURE_LEN, n_zones, device=device) * 450 + 50
+    
+    # Time: hours since Unix epoch. Let's pick a random starting hour around year 2023.
+    # 465000 hours ~ 53 years since 1970
+    start_hour = 465000
+    future_time = torch.arange(start_hour, start_hour + FUTURE_LEN, device=device)
+    future_time = future_time.unsqueeze(0).expand(batch_size, -1) # (B, 24)
 
-    # --- Initialize Model ---
+    return history_weather, history_energy, future_weather, future_time, future_energy_target
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Training Setup
+# ─────────────────────────────────────────────────────────────────────────────
+
+def train():
+    print(f"--- Starting Training on {DEVICE} ---")
+    
+    # Initialize the model
+    metadata = {
+        "n_zones": N_ZONES, 
+        "n_weather_vars": N_WEATHER_VARS, 
+        "future_len": FUTURE_LEN
+    }
+    
+    # Use your factory function (or instantiate directly)
+    # model = get_model(metadata) 
     model = EnergyForecastModel(
-        n_zones=10,             # Match your dataset
-        n_weather_vars=7,
-        future_len=24
-    ).to(device)
+        n_zones=N_ZONES,
+        n_weather_vars=N_WEATHER_VARS,
+        history_len=24,
+        future_len=FUTURE_LEN,
+        grid_size=5,
+        d_spatial=128,
+        d_model=256,
+        n_heads=8,
+        n_layers=4,
+        dropout=0.1,
+    ).to(DEVICE)
 
-    # --- Optimizer and Loss Function ---
-    # MSE is standard for regression, though MAE (L1Loss) is closer to the MAPE metric
-    criterion = nn.MSELoss() 
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    # Populate Normalization Stats
+    # In reality, compute this across your entire training dataset before training!
+    print("Populating dataset normalization statistics...")
+    model.energy_mean.data = torch.full((1, 1, N_ZONES), 275.0, device=DEVICE) # Dummy mean
+    model.energy_std.data  = torch.full((1, 1, N_ZONES), 125.0, device=DEVICE) # Dummy std
+    
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    
+    # Using Mean Squared Error for regression (predicting continuous MWh)
+    criterion = nn.MSELoss()
 
-    best_val_loss = float('inf')
-
-    # =========================================================================
-    # 3. The Epoch Loop
-    # =========================================================================
-    for epoch in range(num_epochs):
-        print(f"\n--- Epoch {epoch+1}/{num_epochs} ---")
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 3. Training Loop
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    model.train()
+    
+    for epoch in range(1, EPOCHS + 1):
+        epoch_start = time.time()
         
-        # ---------------------------------------------------------------------
-        # TRAINING PHASE
-        # ---------------------------------------------------------------------
-        model.train() # <--- CRITICAL: Turns on learning behaviors (Dropout, BatchNorm tracking)
-        train_loss = 0.0
+        optimizer.zero_grad()
+        
+        # 1. Fetch data
+        (hist_w, hist_e, fut_w, fut_t, targets) = get_dummy_batch(BATCH_SIZE, N_ZONES, DEVICE)
+        
+        # 2. Pre-process inputs through the model's adapter
+        hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
+            history_weather=hist_w,
+            history_energy=hist_e,
+            future_weather=fut_w,
+            future_time=fut_t
+        )
+        
+        # 3. Forward pass
+        predictions = model(
+            hist_sp=hist_sp,
+            hist_e=hist_e_norm,
+            hist_cal=hist_cal,
+            fut_sp=fut_sp,
+            fut_cal=fut_cal
+        )
+        
+        # 4. Calculate Loss
+        # predictions and targets are both in raw MWh shape: (B, F, n_zones)
+        loss = criterion(predictions, targets)
+        
+        # 5. Backward pass & Optimize
+        loss.backward()
+        
+        # Optional but highly recommended for Transformers: Gradient Clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
+        optimizer.step()
+        
+        epoch_time = time.time() - epoch_start
+        print(f"Epoch {epoch}/{EPOCHS} | Loss: {loss.item():.4f} | Time: {epoch_time:.2f}s")
 
-        for batch_idx, (h_w, h_e, f_w, f_t, targets) in enumerate(train_loader):
-            # Move data to GPU
-            h_w, h_e, f_w, f_t = h_w.to(device), h_e.to(device), f_w.to(device), f_t.to(device)
-            targets = targets.to(device)
-
-            # THE 5 STEPS OF MACHINE LEARNING OPTIMIZATION:
-            # 1. Clear old gradients from the last batch
-            optimizer.zero_grad() 
-
-            # 2. Forward Pass: adapt inputs and make a prediction
-            adapted_inputs = model.adapt_inputs(h_w, h_e, f_w, f_t)
-            predictions = model(*adapted_inputs)
-
-            # 3. Calculate Loss: How wrong was the prediction?
-            loss = criterion(predictions, targets)
-
-            # 4. Backward Pass: Calculate the gradients (the math maps for improvement)
-            loss.backward()
-
-            # 5. Optimize: Update the model weights based on the gradients
-            optimizer.step()
-
-            train_loss += loss.item()
-            
-            if batch_idx % 10 == 0:
-                print(f"  Batch {batch_idx:03d} | Train Loss: {loss.item():.4f}")
-
-        avg_train_loss = train_loss / len(train_loader)
-
-        # ---------------------------------------------------------------------
-        # VALIDATION PHASE
-        # ---------------------------------------------------------------------
-        model.eval() # <--- CRITICAL: Turns OFF learning behaviors (locks weights)
-        val_loss = 0.0
-
-        with torch.no_grad(): # <--- CRITICAL: Disables gradient tracking (saves memory)
-            for h_w, h_e, f_w, f_t, targets in val_loader:
-                h_w, h_e, f_w, f_t = h_w.to(device), h_e.to(device), f_w.to(device), f_t.to(device)
-                targets = targets.to(device)
-
-                adapted_inputs = model.adapt_inputs(h_w, h_e, f_w, f_t)
-                predictions = model(*adapted_inputs)
-                
-                loss = criterion(predictions, targets)
-                val_loss += loss.item()
-
-        avg_val_loss = val_loss / len(val_loader)
-        print(f"Epoch {epoch+1} Summary | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
-
-        # ---------------------------------------------------------------------
-        # CHECKPOINTING
-        # ---------------------------------------------------------------------
-        # If the model performed better on validation data than ever before, save it!
-        # This is the file `evaluate.py` will look for.
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), _CKPT_PATH)
-            print(f"  --> Validation loss improved! Saved checkpoint to {_CKPT_PATH}")
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 4. Save Checkpoint
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    print("\nTraining complete. Saving checkpoint...")
+    
+    # Save the state dictionary to the path expected by your get_model factory
+    torch.save(model.state_dict(), _CKPT_PATH)
+    print(f"Model saved successfully to: {_CKPT_PATH.resolve()}")
 
 if __name__ == "__main__":
-    train_model()
+    # Suppress pandas DatetimeIndex warnings if necessary
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning)
+    
+    train()

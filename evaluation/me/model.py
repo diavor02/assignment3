@@ -93,9 +93,9 @@ class EnergyForecastModel(nn.Module):
 
     def __init__(
         self,
-        n_zones:        int,
+        n_zones:        int   = 8,
         n_weather_vars: int   = 7,
-        history_len:    int   = 24,   # S  — hours of history used by model
+        history_len:    int   = 48,   # S  — hours of history used by model
         future_len:     int   = 24,   # F
         grid_size:      int   = 5,    # CNN output grid (grid_size × grid_size)
         d_spatial:      int   = 128,  # CNN output channels
