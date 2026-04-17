@@ -4,7 +4,8 @@ import torch.optim as optim
 from pathlib import Path
 import time
 
-from model import EnergyForecastModel, SpatialCNN, get_model
+from model import EnergyForecastModel
+from datasets import get_dataloader, DemandTimeDataset
 
 # NOTE: Assuming your model classes (SpatialCNN, EnergyForecastModel) 
 # and the get_model factory are imported here. For example:
@@ -18,9 +19,9 @@ _CKPT_PATH = Path("energy_forecast_model.pt")
 
 # Hyperparameters
 BATCH_SIZE = 2      # Kept small due to large 450x449 weather inputs
-EPOCHS = 5
+EPOCHS = 20
 LEARNING_RATE = 1e-4
-N_ZONES = 10
+N_ZONES = 8
 N_WEATHER_VARS = 7
 FUTURE_LEN = 24
 
@@ -30,28 +31,6 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 1. Dummy Data Generator
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_dummy_batch(batch_size: int, n_zones: int, device: torch.device):
-    """
-    Generates dummy tensors matching the expected inputs for adapt_inputs().
-    """
-    # historical window = 168 hours (1 week)
-    history_weather = torch.randn(batch_size, 168, 450, 449, N_WEATHER_VARS, device=device)
-    # Energy in raw MWh (e.g., ranging from 50 to 500)
-    history_energy = torch.rand(batch_size, 168, n_zones, device=device) * 450 + 50 
-    
-    # future window = 24 hours
-    future_weather = torch.randn(batch_size, FUTURE_LEN, 450, 449, N_WEATHER_VARS, device=device)
-    
-    # Target values we are trying to predict (raw MWh)
-    future_energy_target = torch.rand(batch_size, FUTURE_LEN, n_zones, device=device) * 450 + 50
-    
-    # Time: hours since Unix epoch. Let's pick a random starting hour around year 2023.
-    # 465000 hours ~ 53 years since 1970
-    start_hour = 465000
-    future_time = torch.arange(start_hour, start_hour + FUTURE_LEN, device=device)
-    future_time = future_time.unsqueeze(0).expand(batch_size, -1) # (B, 24)
-
-    return history_weather, history_energy, future_weather, future_time, future_energy_target
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Training Setup
@@ -66,9 +45,9 @@ def train():
         "n_weather_vars": N_WEATHER_VARS, 
         "future_len": FUTURE_LEN
     }
+
+    tabular_ds = DemandTimeDataset(csv_path="demand_raw.csv", S=168, future_steps=24)
     
-    # Use your factory function (or instantiate directly)
-    # model = get_model(metadata) 
     model = EnergyForecastModel(
         n_zones=N_ZONES,
         n_weather_vars=N_WEATHER_VARS,
@@ -82,76 +61,142 @@ def train():
         dropout=0.1,
     ).to(DEVICE)
 
-    # Populate Normalization Stats
-    # In reality, compute this across your entire training dataset before training!
+    # 3. Populate REAL Normalization Stats from the tabular dataset
     print("Populating dataset normalization statistics...")
-    model.energy_mean.data = torch.full((1, 1, N_ZONES), 275.0, device=DEVICE) # Dummy mean
-    model.energy_std.data  = torch.full((1, 1, N_ZONES), 125.0, device=DEVICE) # Dummy std
     
+    # tabular_ds.energy has shape (Total_Hours, n_zones)
+    # Calculate mean and std across the time dimension (dim=0)
+    true_mean = tabular_ds.energy.mean(dim=0)  # Shape: (n_zones,)
+    true_std  = tabular_ds.energy.std(dim=0)   # Shape: (n_zones,)
+    
+    # Reshape to (1, 1, n_zones) to match the buffer dimensions and move to GPU
+    model.energy_mean.data = true_mean.view(1, 1, -1).to(DEVICE)
+    model.energy_std.data  = true_std.view(1, 1, -1).to(DEVICE)
+
+    print(f"Stats loaded. Example Zone 0 (ME) - Mean: {true_mean[0]:.2f}, Std: {true_std[0]:.2f}")
+
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-    
-    # Using Mean Squared Error for regression (predicting continuous MWh)
     criterion = nn.MSELoss()
+
+    # Initialize the best loss tracker to infinity
+    best_val_loss = float('inf')
+    best_epoch = 0
 
     # ─────────────────────────────────────────────────────────────────────────────
     # 3. Training Loop
     # ─────────────────────────────────────────────────────────────────────────────
-    
-    model.train()
+    train_loader = get_dataloader()
+    val_loader   = get_dataloader(batch_size=2, is_train=False)
     
     for epoch in range(1, EPOCHS + 1):
-        epoch_start = time.time()
-        
-        optimizer.zero_grad()
-        
-        # 1. Fetch data
-        (hist_w, hist_e, fut_w, fut_t, targets) = get_dummy_batch(BATCH_SIZE, N_ZONES, DEVICE)
-        
-        # 2. Pre-process inputs through the model's adapter
-        hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
-            history_weather=hist_w,
-            history_energy=hist_e,
-            future_weather=fut_w,
-            future_time=fut_t
-        )
-        
-        # 3. Forward pass
-        predictions = model(
-            hist_sp=hist_sp,
-            hist_e=hist_e_norm,
-            hist_cal=hist_cal,
-            fut_sp=fut_sp,
-            fut_cal=fut_cal
-        )
-        
-        # 4. Calculate Loss
-        # predictions and targets are both in raw MWh shape: (B, F, n_zones)
-        loss = criterion(predictions, targets)
-        
-        # 5. Backward pass & Optimize
-        loss.backward()
-        
-        # Optional but highly recommended for Transformers: Gradient Clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
-        optimizer.step()
-        
-        epoch_time = time.time() - epoch_start
-        print(f"Epoch {epoch}/{EPOCHS} | Loss: {loss.item():.4f} | Time: {epoch_time:.2f}s")
+            epoch_start = time.time()
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 4. Save Checkpoint
-    # ─────────────────────────────────────────────────────────────────────────────
-    
-    print("\nTraining complete. Saving checkpoint...")
-    
-    # Save the state dictionary to the path expected by your get_model factory
-    torch.save(model.state_dict(), _CKPT_PATH)
-    print(f"Model saved successfully to: {_CKPT_PATH.resolve()}")
+            # ─────────────────────────────────────────────────────────────────
+            # --- TRAINING PHASE ---
+            # ─────────────────────────────────────────────────────────────────
+            model.train()
+            total_train_loss = 0.0
+
+            for batch_idx, batch in enumerate(train_loader, 1):
+                optimizer.zero_grad()
+
+                hist_w, hist_e, fut_w, fut_t, targets = batch
+
+                hist_w = hist_w.to(DEVICE)
+                hist_e = hist_e.to(DEVICE)
+                fut_w  = fut_w.to(DEVICE)
+                fut_t  = fut_t.to(DEVICE)
+                targets = targets.to(DEVICE)
+                
+                hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
+                    history_weather=hist_w, history_energy=hist_e,
+                    future_weather=fut_w, future_time=fut_t
+                )
+
+                predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
+                loss = criterion(predictions, targets)
+
+                loss.backward()
+                
+                # Track gradient norm BEFORE clipping — a sudden spike signals instability
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
+                optimizer.step()
+                total_train_loss += loss.item() * targets.size(0)
+
+                # ── Intra-epoch progress (every 10 batches) ───────────────────
+                if batch_idx % 10 == 0 or batch_idx == len(train_loader):
+                    print(
+                        f"  Epoch {epoch}/{EPOCHS} "
+                        f"[{batch_idx:>{len(str(len(train_loader)))}}/{len(train_loader)}] "
+                        f"│ batch_loss={loss.item():.4f} "
+                        f"│ grad_norm={grad_norm:.4f}",
+                        end="\r"
+                    )
+
+            print()  # newline after the \r progress line
+            avg_train_loss = total_train_loss / len(train_loader.dataset)
+
+            # ─────────────────────────────────────────────────────────────────
+            # --- VALIDATION PHASE ---
+            # ─────────────────────────────────────────────────────────────────
+            model.eval()
+            total_val_loss = 0.0
+
+            with torch.no_grad():
+                for batch in val_loader:
+                    hist_w, hist_e, fut_w, fut_t, targets = batch
+
+                    hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
+                        history_weather=hist_w, history_energy=hist_e,
+                        future_weather=fut_w, future_time=fut_t
+                    )
+
+                    predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
+                    loss = criterion(predictions, targets)
+                    total_val_loss += loss.item() * targets.size(0)
+
+            avg_val_loss   = total_val_loss / len(val_loader.dataset)
+            epoch_duration = time.time() - epoch_start
+            
+            # ── Compute gap to detect overfitting ─────────────────────────────
+            overfit_gap = avg_val_loss - avg_train_loss
+
+            # ── Per-epoch summary ─────────────────────────────────────────────
+            print(
+                f"Epoch {epoch:>{len(str(EPOCHS))}}/{EPOCHS} "
+                f"│ train={avg_train_loss:.4f} "
+                f"│ val={avg_val_loss:.4f} "
+                f"│ gap={overfit_gap:+.4f} "          # positive = overfitting, negative = underfitting
+                f"│ best={best_val_loss:.4f} "
+                f"│ lr={optimizer.param_groups[0]['lr']:.2e} "
+                f"│ {epoch_duration:.1f}s"
+            )
+
+            # ── Save best model ───────────────────────────────────────────────
+            if avg_val_loss < best_val_loss:
+                improvement = best_val_loss - avg_val_loss
+                best_val_loss = avg_val_loss
+                best_epoch = epoch
+                torch.save(model.state_dict(), _CKPT_PATH)
+                print(f"  ✓ New best saved — improved by {improvement:.4f} (epoch {best_epoch})")
+            else:
+                epochs_without_improvement = epoch - best_epoch
+                print(f"  ✗ No improvement for {epochs_without_improvement} epoch(s) — best was epoch {best_epoch}")
+
+                # ── Early stopping hint ───────────────────────────────────────
+                PATIENCE = 10
+                if epochs_without_improvement >= PATIENCE:
+                    print(
+                        f"\n⚠  Early stopping: val_loss hasn't improved for {PATIENCE} epochs.\n"
+                        f"   Best val_loss = {best_val_loss:.4f} at epoch {best_epoch}. Stopping now.\n"
+                    )
+                    break
+
+    print(f"\nTraining complete. Best model saved to: {_CKPT_PATH.resolve()} with a loss of {best_val_loss:.4f}")
 
 if __name__ == "__main__":
-    # Suppress pandas DatetimeIndex warnings if necessary
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning)
-    
+
     train()
