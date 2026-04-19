@@ -18,7 +18,7 @@ from datasets import get_dataloader, DemandTimeDataset
 _CKPT_PATH = Path("energy_forecast_model.pt")
 
 # Hyperparameters
-BATCH_SIZE = 2      # Kept small due to large 450x449 weather inputs
+BATCH_SIZE = 10      # Kept small due to large 450x449 weather inputs
 EPOCHS = 20
 LEARNING_RATE = 1e-4
 N_ZONES = 8
@@ -46,7 +46,7 @@ def train():
         "future_len": FUTURE_LEN
     }
 
-    tabular_ds = DemandTimeDataset(csv_path="demand_raw.csv", S=168, future_steps=24)
+    tabular_ds = DemandTimeDataset(csv_path="filtered_demand_raw.csv", S=168, future_steps=24)
     
     model = EnergyForecastModel(
         n_zones=N_ZONES,

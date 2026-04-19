@@ -21,10 +21,10 @@ class WeatherLazyDataset(Dataset):
 
         data_dirs = [
             "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2019",
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2022",
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2023"
+            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
+            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
+            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2022",
+            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2023"
          ]
         self.file_paths = sorted([
             f for d in data_dirs
@@ -70,7 +70,7 @@ class DemandTimeDataset(Dataset):
     Loads raw tabular data once into memory and slices sliding windows on-the-fly.
     Perfectly tailored for `EnergyForecastModel.adapt_inputs`.
     """
-    def __init__(self, csv_path='demand_raw.csv', S=168, future_steps=24):
+    def __init__(self, csv_path='filtered_demand_raw.csv', S=168, future_steps=24):
         self.S = S
         self.future_steps = future_steps
         self.seq_length = S + future_steps
