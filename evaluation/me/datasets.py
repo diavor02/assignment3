@@ -20,6 +20,7 @@ class WeatherLazyDataset(Dataset):
         self.in_channels = in_channels
 
         data_dirs = [
+            # "/cluster/home/diavor01/assignment3/weather_files/"
             "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2019",
             # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
             # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
