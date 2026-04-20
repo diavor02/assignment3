@@ -84,7 +84,7 @@ class EnergyForecastModel(nn.Module):
         n_zones:        int   = 8,
         n_weather_vars: int   = 7,
         S:              int   = 168,   # S — number of past hourly timesteps seen by the model
-        horizon:     int   = 24,    # F — number of future hourly timesteps to predict
+        horizon:        int   = 24,    # F — number of future hourly timesteps to predict
         grid_size:      int   = 5,     # CNN output is grid_size × grid_size spatial patches
         d_spatial:      int   = 128,   # channel depth output by the CNN before projection
         d_model:        int   = 256,   # unified embedding dimension used throughout the Transformer

@@ -1,2 +1,0 @@
-/cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation/smna/model.py:145: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
-  self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=config.num_layers)
