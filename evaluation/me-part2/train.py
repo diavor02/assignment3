@@ -4,7 +4,7 @@ import torch.optim as optim
 from pathlib import Path
 import time
 
-from model import EnergyForecastModel
+from model import RNNEnergyForecastModel
 from datasets import get_dataloader, DemandTimeDataset
 
 # NOTE: Assuming your model classes (CNN, EnergyForecastModel) 
@@ -14,8 +14,6 @@ from datasets import get_dataloader, DemandTimeDataset
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-
-_CKPT_PATH = Path("energy_forecast_model.pt")
 
 # Hyperparameters
 BATCH_SIZE = 20      # Kept small due to large 450x449 weather inputs
@@ -28,26 +26,15 @@ horizon = 24
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Dummy Data Generator
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 2. Training Setup
 # ─────────────────────────────────────────────────────────────────────────────
-
-import time
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from pathlib import Path
 
 def train():
     print(f"--- Starting Training on {DEVICE} ---")
     
     tabular_ds = DemandTimeDataset(csv_path="filtered_demand_raw.csv", S=168, future_steps=24)
     
-    model = EnergyForecastModel(
+    model = RNNEnergyForecastModel(
         n_zones=N_ZONES,
         n_weather_vars=N_WEATHER_VARS,
         S=168,
@@ -55,7 +42,6 @@ def train():
         grid_size=5,
         d_spatial=128,
         d_model=256,
-        n_heads=8,
         n_layers=4,
         dropout=0.1,
     ).to(DEVICE)
