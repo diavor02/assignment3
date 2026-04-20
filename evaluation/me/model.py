@@ -5,6 +5,9 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
+_CKPT_PATH = Path(__file__).parent / "energy_forecast_model.pt"
+
+
 class CNN(nn.Module):
     """
     Converts a single (C, H, W) weather grid snapshot into P = grid_size²
@@ -395,3 +398,40 @@ class EnergyForecastModel(nn.Module):
 
         # Convert normalised outputs back to the original MWh scale.
         return self._denormalise(pred_norm)                        # (B, F, n_zones)
+
+def get_model(metadata: dict) -> EnergyForecastModel:
+    """
+    Instantiate EnergyForecastModel from dataset metadata and optionally restore
+    saved weights from disk.
+
+    If a checkpoint exists at _CKPT_PATH, its state dict is loaded with
+    map_location="cpu" to avoid device mismatches when loading a GPU-trained
+    model on a CPU-only machine; the caller is responsible for moving the model
+    to the target device afterwards.
+
+    Parameters
+    ----------
+    metadata : dict
+        Must contain:
+          n_zones        — number of energy zones to forecast
+          n_weather_vars — number of input weather channels
+          future_len     — number of future hours to predict
+    """
+    model = EnergyForecastModel(
+        n_zones        = metadata["n_zones"],
+        n_weather_vars = metadata["n_weather_vars"],
+        S              = 168,    
+        horizon        = metadata["future_len"],
+        grid_size      = 5,     # 5×5 = 25 spatial patch tokens per timestep
+        d_spatial      = 128,   # CNN output channels before d_model projection
+        d_model        = 256,   # Transformer embedding dimension
+        n_heads        = 8,
+        n_layers       = 4,
+        dropout        = 0.1,
+    )
+
+    state = torch.load(_CKPT_PATH, map_location="cpu", weights_only=True)
+    model.load_state_dict(state)
+    print(f"Loaded checkpoint: {_CKPT_PATH}")
+
+    return model
