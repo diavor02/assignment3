@@ -7,9 +7,9 @@ import time
 from model import EnergyForecastModel
 from datasets import get_dataloader, DemandTimeDataset
 
-# NOTE: Assuming your model classes (SpatialCNN, EnergyForecastModel) 
+# NOTE: Assuming your model classes (CNN, EnergyForecastModel) 
 # and the get_model factory are imported here. For example:
-# from your_model_file import EnergyForecastModel, SpatialCNN, get_model
+# from your_model_file import EnergyForecastModel, CNN, get_model
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -23,7 +23,7 @@ EPOCHS = 20
 LEARNING_RATE = 1e-4
 N_ZONES = 8
 N_WEATHER_VARS = 7
-FUTURE_LEN = 24
+horizon = 24
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -45,20 +45,13 @@ from pathlib import Path
 def train():
     print(f"--- Starting Training on {DEVICE} ---")
     
-    # Initialize the model
-    metadata = {
-        "n_zones": N_ZONES, 
-        "n_weather_vars": N_WEATHER_VARS, 
-        "future_len": FUTURE_LEN
-    }
-
     tabular_ds = DemandTimeDataset(csv_path="filtered_demand_raw.csv", S=168, future_steps=24)
     
     model = EnergyForecastModel(
         n_zones=N_ZONES,
         n_weather_vars=N_WEATHER_VARS,
-        history_len=24,
-        future_len=FUTURE_LEN,
+        S=168,
+        horizon=horizon,
         grid_size=5,
         d_spatial=128,
         d_model=256,
