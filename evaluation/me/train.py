@@ -18,7 +18,7 @@ from datasets import get_dataloader, DemandTimeDataset
 _CKPT_PATH = Path("energy_forecast_model.pt")
 
 # Hyperparameters
-BATCH_SIZE = 20      # Kept small due to large 450x449 weather inputs
+BATCH_SIZE = 2      # Kept small due to large 450x449 weather inputs
 EPOCHS = 20
 LEARNING_RATE = 1e-4
 N_ZONES = 8
@@ -84,11 +84,11 @@ def train():
     # ─────────────────────────────────────────────────────────────────────────────
     # 3. Training Loop
     # ─────────────────────────────────────────────────────────────────────────────
-    train_loader = get_dataloader()
-    val_loader   = get_dataloader(batch_size=2, is_train=False)
+    train_loader = get_dataloader(batch_size=BATCH_SIZE)
+    val_loader   = get_dataloader(batch_size=BATCH_SIZE, is_train=False)
     
     # Set to strictly 2 epochs
-    num_epochs = 2
+    num_epochs = 1
     
     for epoch in range(1, num_epochs + 1):
         epoch_start = time.time()
@@ -145,24 +145,24 @@ def train():
         model.eval()
         total_val_loss = 0.0
 
-        with torch.no_grad():
-            for batch in val_loader:
-                hist_w, hist_e, fut_w, fut_t, targets = batch
+        # with torch.no_grad():
+        #     for batch in val_loader:
+        #         hist_w, hist_e, fut_w, fut_t, targets = batch
 
-                hist_w = hist_w.to(DEVICE)
-                hist_e = hist_e.to(DEVICE)
-                fut_w  = fut_w.to(DEVICE)
-                fut_t  = fut_t.to(DEVICE)
-                targets = targets.to(DEVICE)
+        #         hist_w = hist_w.to(DEVICE)
+        #         hist_e = hist_e.to(DEVICE)
+        #         fut_w  = fut_w.to(DEVICE)
+        #         fut_t  = fut_t.to(DEVICE)
+        #         targets = targets.to(DEVICE)
 
-                hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
-                    history_weather=hist_w, history_energy=hist_e,
-                    future_weather=fut_w, future_time=fut_t
-                )
+        #         hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
+        #             history_weather=hist_w, history_energy=hist_e,
+        #             future_weather=fut_w, future_time=fut_t
+        #         )
 
-                predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
-                loss = criterion(predictions, targets)
-                total_val_loss += loss.item() * targets.size(0)
+        #         predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
+        #         loss = criterion(predictions, targets)
+        #         total_val_loss += loss.item() * targets.size(0)
 
         avg_val_loss   = total_val_loss / len(val_loader.dataset)
         epoch_duration = time.time() - epoch_start

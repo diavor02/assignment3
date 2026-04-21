@@ -21,10 +21,10 @@ class WeatherLazyDataset(Dataset):
 
         data_dirs = [
             # "/cluster/home/diavor01/assignment3/weather_files/"
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2019",
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2022",
+            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2019",
+            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
+            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
+            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2022",
             # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2023"
          ]
         self.file_paths = sorted([
@@ -144,9 +144,9 @@ class JointEnergyWeatherDataset(Dataset):
         return hist_w, hist_e, fut_w, fut_t, targets
 
 def get_dataloader(
-    batch_size: int = 2,
+    batch_size: int = 20,
     is_train: bool = True,
-    val_split: float = 0.2,
+    val_split: float = 0.1,
 ) -> DataLoader:
     # 1. Instantiate your raw datasets
     weather_ds = WeatherLazyDataset()
