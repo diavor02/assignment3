@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -44,8 +45,11 @@ from pathlib import Path
 
 def train():
     print(f"--- Starting Training on {DEVICE} ---")
+
+    batch_size = int(os.getenv("TRAIN_BATCH_SIZE", BATCH_SIZE))
+    num_epochs = int(os.getenv("TRAIN_EPOCHS", EPOCHS))
     
-    tabular_ds = DemandTimeDataset(csv_path="filtered_demand_raw.csv", S=168, future_steps=24)
+    tabular_ds = DemandTimeDataset(S=168, future_steps=24)
     
     model = EnergyForecastModel(
         n_zones=N_ZONES,
@@ -84,11 +88,8 @@ def train():
     # ─────────────────────────────────────────────────────────────────────────────
     # 3. Training Loop
     # ─────────────────────────────────────────────────────────────────────────────
-    train_loader = get_dataloader(batch_size=BATCH_SIZE)
-    val_loader   = get_dataloader(batch_size=BATCH_SIZE, is_train=False)
-    
-    # Set to strictly 2 epochs
-    num_epochs = 1
+    train_loader = get_dataloader(batch_size=batch_size)
+    val_loader   = get_dataloader(batch_size=batch_size, is_train=False)
     
     for epoch in range(1, num_epochs + 1):
         epoch_start = time.time()
@@ -145,24 +146,24 @@ def train():
         model.eval()
         total_val_loss = 0.0
 
-        # with torch.no_grad():
-        #     for batch in val_loader:
-        #         hist_w, hist_e, fut_w, fut_t, targets = batch
+        with torch.no_grad():
+            for batch in val_loader:
+                hist_w, hist_e, fut_w, fut_t, targets = batch
 
-        #         hist_w = hist_w.to(DEVICE)
-        #         hist_e = hist_e.to(DEVICE)
-        #         fut_w  = fut_w.to(DEVICE)
-        #         fut_t  = fut_t.to(DEVICE)
-        #         targets = targets.to(DEVICE)
+                hist_w = hist_w.to(DEVICE)
+                hist_e = hist_e.to(DEVICE)
+                fut_w  = fut_w.to(DEVICE)
+                fut_t  = fut_t.to(DEVICE)
+                targets = targets.to(DEVICE)
 
-        #         hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
-        #             history_weather=hist_w, history_energy=hist_e,
-        #             future_weather=fut_w, future_time=fut_t
-        #         )
+                hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal = model.adapt_inputs(
+                    history_weather=hist_w, history_energy=hist_e,
+                    future_weather=fut_w, future_time=fut_t
+                )
 
-        #         predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
-        #         loss = criterion(predictions, targets)
-        #         total_val_loss += loss.item() * targets.size(0)
+                predictions = model(hist_sp, hist_e_norm, hist_cal, fut_sp, fut_cal)
+                loss = criterion(predictions, targets)
+                total_val_loss += loss.item() * targets.size(0)
 
         avg_val_loss   = total_val_loss / len(val_loader.dataset)
         epoch_duration = time.time() - epoch_start
@@ -184,6 +185,9 @@ def train():
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_epoch = epoch
+            best_save_name = "best_model.pth"
+            torch.save(model.state_dict(), best_save_name)
+            print(f"  ✓ New best model saved to: {best_save_name}")
 
         # ── Save model every epoch ─────────────────────────────────────────
         save_name = f"model_epoch_{epoch}.pth"

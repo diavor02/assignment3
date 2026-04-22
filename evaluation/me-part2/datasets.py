@@ -1,5 +1,6 @@
 import os
 import glob
+from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 import pandas as pd
@@ -8,8 +9,11 @@ import pandas as pd
 
 import torch.nn as nn
 
+ENERGY_DATA_DIR = Path("/cluster/tufts/c26sp1cs0137/data/assignment3_data/energy_demand_data")
+WEATHER_DATA_DIR = Path("/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data")
+
 class WeatherLazyDataset(Dataset):
-    def __init__(self, data_dir="/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/", S=168, horizon=24,
+    def __init__(self, data_dir=WEATHER_DATA_DIR, S=168, horizon=24,
                  original_h=450, original_w=449, in_channels=7):
         # Save S and horizon so we can use them for slicing later
         self.S = S
@@ -19,17 +23,15 @@ class WeatherLazyDataset(Dataset):
         self.original_w = original_w
         self.in_channels = in_channels
 
+        data_root = Path(data_dir)
         data_dirs = [
-            # "/cluster/home/diavor01/assignment3/weather_files/"
-            "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2019",
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2020", 
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2021", 
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2022",
-            # "/cluster/tufts/c26sp1cs0137/data/assignment3_data/weather_data/2023"
-         ]
+            data_root / "2020",
+            data_root / "2021",
+            data_root / "2022",
+        ]
         self.file_paths = sorted([
             f for d in data_dirs
-            for f in glob.glob(os.path.join(d, "**", "*.pt"), recursive=True)
+            for f in glob.glob(os.path.join(str(d), "**", "*.pt"), recursive=True)
         ])
 
 
@@ -71,13 +73,20 @@ class DemandTimeDataset(Dataset):
     Loads raw tabular data once into memory and slices sliding windows on-the-fly.
     Perfectly tailored for `EnergyForecastModel.adapt_inputs`.
     """
-    def __init__(self, csv_path='filtered_demand_raw.csv', S=168, future_steps=24):
+    def __init__(self, csv_path=None, S=168, future_steps=24):
         self.S = S
         self.future_steps = future_steps
         self.seq_length = S + future_steps
         
-        # 1. Load the CSV
-        df = pd.read_csv(csv_path)
+        # 1. Load the cluster CSVs if no explicit file is provided.
+        if csv_path is None:
+            dfs = []
+            for year in (2020, 2021, 2022):
+                year_path = ENERGY_DATA_DIR / f"target_energy_zonal_{year}.csv"
+                dfs.append(pd.read_csv(year_path, parse_dates=["timestamp_utc"]))
+            df = pd.concat(dfs, ignore_index=True).sort_values("timestamp_utc").reset_index(drop=True)
+        else:
+            df = pd.read_csv(csv_path)
         
         # 2. Extract RAW (un-normalized) energy data
         y_cols = ['ME', 'NH', 'VT', 'CT', 'RI', 'SEMA', 'WCMA', 'NEMA_BOST']

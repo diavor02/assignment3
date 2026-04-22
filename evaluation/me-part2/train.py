@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -31,8 +32,11 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def train():
     print(f"--- Starting Training on {DEVICE} ---")
+
+    batch_size = int(os.getenv("TRAIN_BATCH_SIZE", BATCH_SIZE))
+    num_epochs = int(os.getenv("TRAIN_EPOCHS", EPOCHS))
     
-    tabular_ds = DemandTimeDataset(csv_path="filtered_demand_raw.csv", S=168, future_steps=24)
+    tabular_ds = DemandTimeDataset(S=168, future_steps=24)
     
     model = RNNEnergyForecastModel(
         n_zones=N_ZONES,
@@ -70,11 +74,8 @@ def train():
     # ─────────────────────────────────────────────────────────────────────────────
     # 3. Training Loop
     # ─────────────────────────────────────────────────────────────────────────────
-    train_loader = get_dataloader()
-    val_loader   = get_dataloader(batch_size=2, is_train=False)
-    
-    # Set to strictly 2 epochs
-    num_epochs = 2
+    train_loader = get_dataloader(batch_size=batch_size)
+    val_loader   = get_dataloader(batch_size=batch_size, is_train=False)
     
     for epoch in range(1, num_epochs + 1):
         epoch_start = time.time()
@@ -170,6 +171,9 @@ def train():
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_epoch = epoch
+            best_save_name = "best_model.pth"
+            torch.save(model.state_dict(), best_save_name)
+            print(f"  ✓ New best model saved to: {best_save_name}")
 
         # ── Save model every epoch ─────────────────────────────────────────
         save_name = f"model_epoch_{epoch}.pth"
