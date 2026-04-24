@@ -10,7 +10,7 @@ import torch
 
 PATH = "/cluster/tufts/c26sp1cs0137/data/assignment3_data/"
 PROJECT_ROOT = Path(__file__).resolve().parent
-CHECKPOINT_VERSION = "v1"
+CHECKPOINT_VERSION = "v2"
 CHECKPOINT_ROOT = PROJECT_ROOT / "evaluation" / "subhanga-additions" / "checkpoints" / CHECKPOINT_VERSION
 
 

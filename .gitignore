@@ -3,3 +3,6 @@ venv
 *.csv
 weather_files
 *.pdf
+*.pt
+*.txt
+evaluation/subhanga-additions/checkpoints/
