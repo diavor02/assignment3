@@ -15,6 +15,8 @@ set -euo pipefail
 MODEL_KIND=${1:-transformer}
 TRAIN_EPOCHS=${2:-20}
 TRAIN_BATCH_SIZE=${3:-2}
+TRAIN_RESUME_CKPT=${4:-}
+TRAIN_RUN_DIR=${5:-}
 
 module load class/default
 module load cs137/2026spring
@@ -22,10 +24,13 @@ module load cs137/2026spring
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export TRAIN_EPOCHS
 export TRAIN_BATCH_SIZE
+export TRAIN_RESUME_CKPT
+export TRAIN_RUN_DIR
 
 cd /cluster/home/supadh03/cs137/assignment3/evaluation
 
 echo "Starting model=${MODEL_KIND} epochs=${TRAIN_EPOCHS} batch=${TRAIN_BATCH_SIZE} on host $(hostname)"
+echo "resume=${TRAIN_RESUME_CKPT:-<auto>} run_dir=${TRAIN_RUN_DIR:-<auto>}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi || true
 

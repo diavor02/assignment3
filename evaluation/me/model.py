@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -5,7 +6,13 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
-_CKPT_PATH = Path(__file__).parent / "energy_forecast_model.pt"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from helper import best_checkpoint_path, latest_checkpoint_path, resolve_active_run_dir
+
+_LEGACY_CKPT_PATH = Path(__file__).parent / "energy_forecast_model.pt"
 
 
 class CNN(nn.Module):
@@ -430,8 +437,30 @@ def get_model(metadata: dict) -> EnergyForecastModel:
         dropout        = 0.1,
     )
 
-    state = torch.load(_CKPT_PATH, map_location="cpu", weights_only=True)
-    model.load_state_dict(state)
-    print(f"Loaded checkpoint: {_CKPT_PATH}")
+    def _load_state_dict(path: Path):
+        checkpoint = torch.load(path, map_location="cpu")
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            return checkpoint["model_state_dict"]
+        return checkpoint
+
+    candidate_paths = []
+    active_run = resolve_active_run_dir("transformer")
+    if active_run is not None:
+        candidate_paths.extend([
+            best_checkpoint_path(active_run),
+            latest_checkpoint_path(active_run),
+        ])
+    candidate_paths.append(_LEGACY_CKPT_PATH)
+
+    for candidate in candidate_paths:
+        if candidate.exists():
+            model.load_state_dict(_load_state_dict(candidate))
+            print(f"Loaded checkpoint: {candidate}")
+            return model
+
+    raise FileNotFoundError(
+        "No checkpoint found for the transformer model. "
+        f"Checked {[str(path) for path in candidate_paths]}"
+    )
 
     return model

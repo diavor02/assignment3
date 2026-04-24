@@ -43,6 +43,12 @@ import torch
 import pandas as pd
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from helper import RegressionMetrics, format_metric_block
+
 # ============================================================
 # Configuration — edit here to switch models or test periods
 # ============================================================
@@ -61,7 +67,7 @@ print(f"Evaluating model: {MODEL_NAME}  |  test year: {TEST_YEAR}  |  n_eval_day
 # Paths (derived automatically — no need to edit)
 # ============================================================
 
-EVAL_DIR    = Path("/cluster/home/diavor01/assignment3/evaluation")  # evaluation/
+EVAL_DIR    = Path(__file__).resolve().parent
 ROOT        = Path("/cluster/tufts/c26sp1cs0137/data/assignment3_data/")
 WEATHER_DIR = ROOT / "weather_data"
 ENERGY_DIR  = ROOT / "energy_demand_data"
@@ -243,6 +249,9 @@ with torch.no_grad():
         date_str = energy_df["timestamp_utc"].iloc[t_idx].date()
         print(f"  [{step+1:>3}/{len(test_dates)}]  {date_str}")
 
+if len(all_preds) == 0:
+    raise RuntimeError("No valid prediction windows were found for evaluation.")
+
 preds   = torch.stack(all_preds).float()    # (N, 24, n_zones)
 targets = torch.stack(all_targets).float()  # (N, 24, n_zones)
 
@@ -253,16 +262,12 @@ targets = torch.stack(all_targets).float()  # (N, 24, n_zones)
 print("\n" + "=" * 65)
 print(f"Results  —  model: {MODEL_NAME}   test year: {TEST_YEAR}")
 print("=" * 65)
-
-def mape(pred: torch.Tensor, target: torch.Tensor) -> float:
-    """Mean Absolute Percentage Error, skipping timesteps where target == 0."""
-    mask = target != 0
-    return (((pred[mask] - target[mask]).abs() / target[mask].abs()).mean() * 100).item()
-
 for j, zone in enumerate(ZONE_COLS):
-    m = mape(preds[:, :, j], targets[:, :, j])
-    print(f"  {zone:20s}  MAPE: {m:7.2f} %")
+    zone_metrics = RegressionMetrics()
+    zone_metrics.update(preds[:, :, j], targets[:, :, j], include_mape=True)
+    print(f"  {zone:20s}  {format_metric_block(zone_metrics.compute(), include_mape=True)}")
 
-overall_mape = mape(preds, targets)
-print(f"\n  {'Overall':20s}  MAPE: {overall_mape:7.2f} %")
+overall_metrics = RegressionMetrics()
+overall_metrics.update(preds, targets, include_mape=True)
+print(f"\n  {'Overall':20s}  {format_metric_block(overall_metrics.compute(), include_mape=True)}")
 print("=" * 65)
