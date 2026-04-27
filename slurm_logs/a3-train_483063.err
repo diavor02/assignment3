@@ -1,0 +1,3 @@
+slurmstepd: error: *** STEP 483063.0 ON pax047 CANCELLED AT 2026-04-25T02:40:05 DUE TO TIME LIMIT ***
+slurmstepd: error: *** JOB 483063 ON pax047 CANCELLED AT 2026-04-25T02:40:05 DUE TO TIME LIMIT ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
