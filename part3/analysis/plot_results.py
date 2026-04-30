@@ -5,8 +5,8 @@ plot_results.py — Generate all 5 figures for the writeup
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-import seaborn as sns
 
 Path("results/figures").mkdir(parents=True, exist_ok=True)
 plt.rcParams.update({"font.size": 11, "figure.dpi": 150})
@@ -94,10 +94,20 @@ def fig3_mape_heatmap():
     pivot.columns = [BUCKET_LABELS.get(c, c) for c in pivot.columns]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="YlOrRd", linewidths=0.5, ax=ax, cbar_kws={"label": "MAPE (%)"})
-    ax.set_title("Forecast Error by ISO-NE Load Zone and Weather Condition\n(MAPE % — lower is better)")
+    data = pivot.to_numpy(dtype=float)
+    im = ax.imshow(data, aspect="auto", cmap="YlOrRd")
+    ax.set_xticks(np.arange(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns)
+    ax.set_yticks(np.arange(len(pivot.index)))
+    ax.set_yticklabels(pivot.index)
     ax.set_xlabel("Weather Condition")
     ax.set_ylabel("ISO-NE Load Zone")
+    ax.set_title("Forecast Error by ISO-NE Load Zone and Weather Condition\n(MAPE % — lower is better)")
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("MAPE (%)")
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            ax.text(j, i, f"{data[i, j]:.1f}", ha="center", va="center", color="black", fontsize=9)
 
     plt.tight_layout()
     plt.savefig("results/figures/fig3_stratified_mape_heatmap.png", bbox_inches="tight")
