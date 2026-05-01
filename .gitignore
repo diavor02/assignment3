@@ -2,7 +2,9 @@ venv
 *.pyc
 *.csv
 weather_files
-*.pdf
+# Ignore all PDF files except the final report
+**/*.pdf
+!CS_137_Assignment_3_Final_Report.pdf
 *.pt
 *.txt
 evaluation/subhanga-additions/checkpoints/

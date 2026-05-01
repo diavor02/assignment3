@@ -469,3 +469,11 @@ Significant performance degradation (Mann-Whitney U, α=0.05):
 - **Connecticut (CT):** High wind, extreme cold
 - **Maine (ME):** Extreme cold, extreme heat
 - **NEMA/SEMA:** Cold sensitivity
+
+---
+
+## Final Paper
+
+The project report is included in the repository root for easy access: [CS_137_Assignment_3_Final_Report.pdf](CS_137_Assignment_3_Final_Report.pdf).
+
+Interpretation (concise): the refined transformer-based model (checkpoint `evaluation/subhanga-additions/checkpoints/v2/transformer/runs/job-483062/best.pt`) provides the best balance of accuracy and efficiency. Part 3 analysis shows that extreme high-wind events negatively impact overall MAPE, and certain zones (CT, ME, NEMA/SEMA) exhibit statistically significant vulnerability during specific extreme regimes. These findings motivated the architectural changes (shorter lookback, smaller d_model, more aggressive spatial downsampling) to improve robustness and runtime for distribution-shift evaluation.
