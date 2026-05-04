@@ -56,7 +56,7 @@ The initial baseline (`evaluation/me/` and `evaluation/me-part2/`) established a
 
 2. **Spatial downsampling efficiency:** final_grid=4 (16 patches) vs. grid_size=5 (25 patches)
    - Aggressive 5-layer CNN with uniform stride-2 downsampling (smoother compression ratio)
-   - Replaces depthwise separable blocks with standard Conv2d + ReLU
+   - Replaces depthwise separable blocks with standard Conv2d + GELU
    - Computational efficiency gain while retaining spatial expressiveness
 
 3. **Model capacity optimization:** d_model=64 vs. d_spatial=128, d_model=256
@@ -66,7 +66,7 @@ The initial baseline (`evaluation/me/` and `evaluation/me-part2/`) established a
    - Better generalization on limited evaluation data
 
 4. **Simplified architecture:**
-   - ReLU activations (vs. GELU with BatchNorm)
+   - GELU activations with BatchNorm, replacing the earlier ReLU-based blocks
    - No BatchNorm in CNN (learnable normalization handles this implicitly)
    - Explicit temporal and spatial position embeddings (vs. implicit in batch stats)
 
